@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using SpriteFontPlus;
@@ -25,7 +26,6 @@ namespace FontStashSharp
 		private Color[] _colorData;
 		private Rectangle[] _verts = new Rectangle[1024 * 2];
 
-		public int FontId;
 		public Alignment Alignment;
 		public float Size;
 		public Color Color;
@@ -88,7 +88,6 @@ namespace FontStashSharp
 		{
 			Size = 12.0f;
 			Color = Color.White;
-			FontId = 0;
 			BlurValue = 0;
 			Spacing = 0;
 			Alignment = Alignment.Left | Alignment.Baseline;
@@ -141,15 +140,7 @@ namespace FontStashSharp
 			var prevGlyphIndex = -1;
 			var isize = (int)(Size * 10.0f);
 			var iblur = (int)BlurValue;
-			float scale = 0;
-			Font font;
 			float width = 0;
-			if (FontId < 0 || FontId >= _fonts.Count)
-				return x;
-			font = _fonts[FontId];
-			if (font.Data == null)
-				return x;
-			scale = font._font.fons__tt_getPixelHeightScale(isize / 10.0f);
 
 			if ((Alignment & Alignment.Left) != 0)
 			{
@@ -170,11 +161,23 @@ namespace FontStashSharp
 			float originX = 0.0f;
 			float originY = 0.0f;
 
-			originY += GetVertAlign(font, Alignment, isize);
-			for (int i = 0; i < str.Length; i += char.IsSurrogatePair(str.String, i + str.Location) ? 2 : 1)
+            originY += GetVertAlign(str, Alignment, isize);
+            for (int i = 0; i < str.Length; i += char.IsSurrogatePair(str.String, i + str.Location) ? 2 : 1)
 			{
 				var codepoint = char.ConvertToUtf32(str.String, i + str.Location);
+                var font = FindFontWithCodepoint(codepoint);
+
+                if (font == null)
+                {
+                    // Skip this character. TODO: draw a box or something.
+                    prevGlyphIndex = -1; // Important so GetQuad() below doesn't use an invalid value next iteration.
+                    continue;
+                }
+
+			    var scale = font._font.fons__tt_getPixelHeightScale(isize / 10.0f);
+
 				glyph = GetGlyph(font, codepoint, isize, iblur, true);
+
 				if (glyph != null)
 				{
 					GetQuad(font, prevGlyphIndex, glyph, scale, Spacing, ref originX, ref originY, &q);
@@ -206,35 +209,61 @@ namespace FontStashSharp
 			return x;
 		}
 
-		public float TextBounds(float x, float y, StringSegment str, ref Bounds bounds)
+        private float GetVertAlign(StringSegment str, Alignment alignment, int isize)
+        {
+            float largestVertAlign = 0;
+
+            for (int i = 0; i < str.Length; i += char.IsSurrogatePair(str.String, i + str.Location) ? 2 : 1)
+            {
+                var codepoint = char.ConvertToUtf32(str.String, i + str.Location);
+                var font = FindFontWithCodepoint(codepoint);
+
+                if (font == null) // TODO: draw a box or something.
+                    continue;
+
+                var vertAlign = GetVertAlign(font, alignment, isize);
+                if (Math.Abs(largestVertAlign) < Math.Abs(vertAlign))
+                    largestVertAlign = vertAlign;
+            }
+
+            return largestVertAlign;
+        }
+
+        public float TextBounds(float x, float y, StringSegment str, ref Bounds bounds)
 		{
 			var q = new FontGlyphSquad();
 			FontGlyph glyph = null;
 			var prevGlyphIndex = -1;
 			var isize = (int)(Size * 10.0f);
 			var iblur = (int)BlurValue;
-			float scale = 0;
-			Font font;
 			float startx = 0;
 			float advance = 0;
 			float minx = 0;
 			float miny = 0;
 			float maxx = 0;
 			float maxy = 0;
-			if (FontId < 0 || FontId >= _fonts.Count)
-				return 0;
-			font = _fonts[FontId];
-			if (font.Data == null)
-				return 0;
-			scale = font._font.fons__tt_getPixelHeightScale(isize / 10.0f);
-			y += GetVertAlign(font, Alignment, isize);
+            y += GetVertAlign(str, Alignment, isize);
+
 			minx = maxx = x;
 			miny = maxy = y;
 			startx = x;
+
 			for (int i = 0; i < str.Length; i += char.IsSurrogatePair(str.String, i + str.Location) ? 2 : 1)
 			{
 				var codepoint = char.ConvertToUtf32(str.String, i + str.Location);
+                var font = FindFontWithCodepoint(codepoint);
+
+                if (font == null)
+                {
+                    // Skip this character. TODO: draw a box or something.
+                    prevGlyphIndex = -1; // Important so GetQuad() below doesn't use an invalid value next iteration.
+                    continue;
+                }
+
+			    var scale = font._font.fons__tt_getPixelHeightScale(isize / 10.0f);
+
 				glyph = GetGlyph(font, codepoint, isize, iblur, false);
+
 				if (glyph != null)
 				{
 					GetQuad(font, prevGlyphIndex, glyph, scale, Spacing, ref x, ref y, &q);
@@ -284,33 +313,21 @@ namespace FontStashSharp
 			return advance;
 		}
 
-		public void VertMetrics(out float ascender, out float descender, out float lineh)
+		public void VertMetrics(Font font, out float ascender, out float descender, out float lineh)
 		{
 			ascender = descender = lineh = 0;
-			Font font;
 			int isize = 0;
-			if (FontId < 0 || FontId >= _fonts.Count)
-				return;
-			font = _fonts[FontId];
 			isize = (int)(Size * 10.0f);
-			if (font.Data == null)
-				return;
 
 			ascender = font.Ascender * isize / 10.0f;
 			descender = font.Descender * isize / 10.0f;
 			lineh = font.LineHeight * isize / 10.0f;
 		}
 
-		public void LineBounds(float y, ref float miny, ref float maxy)
+		public void LineBounds(Font font, float y, out float miny, out float maxy)
 		{
-			Font font;
 			int isize = 0;
-			if (FontId < 0 || FontId >= _fonts.Count)
-				return;
-			font = _fonts[FontId];
 			isize = (int)(Size * 10.0f);
-			if (font.Data == null)
-				return;
 			y += GetVertAlign(font, Alignment, isize);
 			if (_params_.IsAlignmentTopLeft)
 			{
@@ -323,6 +340,33 @@ namespace FontStashSharp
 				miny = maxy - font.LineHeight * isize / 10.0f;
 			}
 		}
+
+        public void LineBounds(float y, out float miny, out float maxy)
+        {
+            if (_fonts.Count == 0)
+                throw new Exception("No fonts are loaded.");
+
+            LineBounds(_fonts[0], y, out miny, out maxy);
+
+            for (var i = 1; i < _fonts.Count; i++)
+            {
+                LineBounds(_fonts[i], y, out var fontMinY, out var fontMaxY);
+                miny = Math.Min(miny, fontMinY);
+                maxy = Math.Max(maxy, fontMaxY);
+            }
+        }
+
+        public float LineHeight()
+        {
+            if (_fonts.Count == 0)
+                throw new Exception("No fonts are loaded.");
+
+            return _fonts.Select(font =>
+            {
+                VertMetrics(font, out _, out _, out var lineh);
+                return lineh;
+            }).Max();
+        }
 
 		public void ExpandAtlas(int width, int height)
 		{
@@ -428,6 +472,20 @@ namespace FontStashSharp
 			BlurCols(dst, w, h, dstStride, alpha);
 		}
 
+        private Font FindFontWithCodepoint(int codepoint)
+        {
+            return _fonts.Find(font => font._font.fons__tt_getGlyphIndex(codepoint) != 0);
+        }
+
+        private FontGlyph GetGlyph(int codepoint, int isize, int iblur, bool isBitmapRequired)
+        {
+            var font = FindFontWithCodepoint(codepoint);
+            if (font == null)
+                return null;
+
+            return GetGlyph(font, codepoint, isize, iblur, isBitmapRequired);
+        }
+
 		private FontGlyph GetGlyph(Font font, int codepoint, int isize, int iblur, bool isBitmapRequired)
 		{
 			var i = 0;
@@ -460,13 +518,14 @@ namespace FontStashSharp
 			{
 				if (!isBitmapRequired || glyph.X0 >= 0 && glyph.Y0 >= 0)
 					return glyph;
-
 			}
+
 			g = font._font.fons__tt_getGlyphIndex(codepoint);
+
 			if (g == 0)
 			{
-				throw new Exception(string.Format("Could not find glyph for codepoint {0}", codepoint));
-			}
+                return null;
+            }
 
 			scale = renderFont._font.fons__tt_getPixelHeightScale(size);
 			renderFont._font.fons__tt_buildGlyphBitmap(g, size, scale, &advance, &lsb, &x0, &y0, &x1, &y1);

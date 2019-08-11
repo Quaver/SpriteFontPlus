@@ -57,18 +57,6 @@ namespace SpriteFontPlus
 			}
 		}
 
-		public int FontId
-		{
-			get
-			{
-				return _fontSystem.FontId;
-			}
-			set
-			{
-				_fontSystem.FontId = value;
-			}
-		}
-
 		public int DefaultFontId
 		{
 			get
@@ -148,6 +136,16 @@ namespace SpriteFontPlus
 
 			return new Rectangle((int)bounds.X, (int)bounds.Y, (int)(bounds.X2 - bounds.X), (int)(bounds.Y2 - bounds.Y));
 		}
+
+		public void GetLineBounds(float y, out float miny, out float maxy)
+		{
+            _fontSystem.LineBounds(y, out miny, out maxy);
+		}
+
+        public float GetLineHeight()
+        {
+            return _fontSystem.LineHeight();
+        }
 
 		public void ExpandAtlas(int newWidth, int newHeight)
 		{

@@ -1,11 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System.Collections.Concurrent;
 using static StbTrueTypeSharp.StbTrueType;
 
 namespace FontStashSharp
 {
 	internal class Font
 	{
-		private readonly Dictionary<ulong, FontGlyph> _glyphs = new Dictionary<ulong, FontGlyph>();
+		private readonly ConcurrentDictionary<ulong, FontGlyph> _glyphs = new ConcurrentDictionary<ulong, FontGlyph>();
 
 		public stbtt_fontinfo _font = new stbtt_fontinfo();
 		public string Name;
@@ -15,7 +15,7 @@ namespace FontStashSharp
 		public float Descender;
 		public float LineHeight;
 
-		public Dictionary<ulong, FontGlyph> Glyphs
+		public ConcurrentDictionary<ulong, FontGlyph> Glyphs
 		{
 			get
 			{
